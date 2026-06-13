@@ -95,17 +95,17 @@ func (c *Client) Articles(ctx context.Context, section string, limit int) ([]Art
 	if err != nil {
 		return nil, err
 	}
-	var feed atomFeed
+	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("parse feed %s: %w", rawURL, err)
 	}
-	entries := feed.Entries
-	if limit > 0 && limit < len(entries) {
-		entries = entries[:limit]
+	items := feed.Channel.Items
+	if limit > 0 && limit < len(items) {
+		items = items[:limit]
 	}
-	out := make([]Article, len(entries))
-	for i, e := range entries {
-		out[i] = entryToArticle(e, i+1)
+	out := make([]Article, len(items))
+	for i, it := range items {
+		out[i] = itemToArticle(it, i+1)
 	}
 	return out, nil
 }

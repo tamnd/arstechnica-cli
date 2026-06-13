@@ -10,23 +10,25 @@ import (
 	"time"
 )
 
-// atomXML returns a minimal valid Atom feed with the given entries injected.
-func atomXML(entries string) string {
+// rssXML returns a minimal valid RSS 2.0 feed with the given items injected.
+func rssXML(items string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
-` + entries + `
-</feed>`
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+` + items + `
+  </channel>
+</rss>`
 }
 
-func singleEntry(title, author, href, published, subject, summary string) string {
-	return `<entry>
+func singleItem(title, link, pubDate, creator, category, description string) string {
+	return `<item>
   <title>` + title + `</title>
-  <link href="` + href + `"/>
-  <published>` + published + `</published>
-  <author><name>` + author + `</name></author>
-  <dc:subject>` + subject + `</dc:subject>
-  <summary type="html"><![CDATA[` + summary + `]]></summary>
-</entry>`
+  <link>` + link + `</link>
+  <pubDate>` + pubDate + `</pubDate>
+  <dc:creator><![CDATA[` + creator + `]]></dc:creator>
+  <category><![CDATA[` + category + `]]></category>
+  <description><![CDATA[` + description + `]]></description>
+</item>`
 }
 
 func newTestClient(ts *httptest.Server) *Client {
@@ -37,12 +39,12 @@ func newTestClient(ts *httptest.Server) *Client {
 }
 
 func TestArticlesParsesTitle(t *testing.T) {
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"Quantum Leap for GPUs",
-		"Jane Smith",
 		"https://arstechnica.com/technology/2024/01/quantum-leap/",
-		"2024-01-15T12:00:00+00:00",
-		"technology",
+		"Mon, 15 Jan 2024 12:00:00 +0000",
+		"Jane Smith",
+		"Technology",
 		"<p>A short summary.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,12 +65,12 @@ func TestArticlesParsesTitle(t *testing.T) {
 }
 
 func TestArticlesParsesAuthor(t *testing.T) {
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"New Telescope Data",
-		"Jennifer Ouellette",
 		"https://arstechnica.com/science/2024/01/telescope/",
-		"2024-01-10T09:00:00+00:00",
-		"science",
+		"Wed, 10 Jan 2024 09:00:00 +0000",
+		"Jennifer Ouellette",
+		"Science",
 		"<p>Body text.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,12 +89,12 @@ func TestArticlesParsesAuthor(t *testing.T) {
 
 func TestArticlesParsesURL(t *testing.T) {
 	wantURL := "https://arstechnica.com/gaming/2024/01/new-game/"
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"New Game Released",
-		"Sam Machkovech",
 		wantURL,
-		"2024-01-12T15:30:00+00:00",
-		"gaming",
+		"Fri, 12 Jan 2024 15:30:00 +0000",
+		"Sam Machkovech",
+		"Gaming",
 		"<p>Summary here.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,12 +112,12 @@ func TestArticlesParsesURL(t *testing.T) {
 }
 
 func TestArticlesParsesDate(t *testing.T) {
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"Security Flaw Found",
-		"Dan Goodin",
 		"https://arstechnica.com/security/2024/03/flaw/",
-		"2024-03-07T18:00:00+00:00",
-		"security",
+		"Thu, 07 Mar 2024 18:00:00 +0000",
+		"Dan Goodin",
+		"Security",
 		"<p>Details.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,12 +135,12 @@ func TestArticlesParsesDate(t *testing.T) {
 }
 
 func TestArticlesStripsSummaryHTML(t *testing.T) {
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"Policy Update",
-		"Kate Cox",
 		"https://arstechnica.com/tech-policy/2024/01/policy/",
-		"2024-01-20T10:00:00+00:00",
-		"policy",
+		"Sat, 20 Jan 2024 10:00:00 +0000",
+		"Kate Cox",
+		"Policy",
 		"<p>This is the <b>summary</b> text.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,12 +162,12 @@ func TestArticlesStripsSummaryHTML(t *testing.T) {
 
 func TestArticlesTruncatesSummary(t *testing.T) {
 	long := strings.Repeat("x", 300)
-	xml := atomXML(singleEntry(
+	xml := rssXML(singleItem(
 		"Long Article",
-		"Author Name",
 		"https://arstechnica.com/technology/2024/01/long/",
-		"2024-01-01T00:00:00+00:00",
-		"technology",
+		"Mon, 01 Jan 2024 00:00:00 +0000",
+		"Author Name",
+		"Technology",
 		"<p>"+long+"</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -187,10 +189,10 @@ func TestArticlesTruncatesSummary(t *testing.T) {
 }
 
 func TestArticlesRankOrder(t *testing.T) {
-	entries := singleEntry("A", "X", "https://arstechnica.com/science/2024/01/a/", "2024-01-01T00:00:00+00:00", "science", "") +
-		singleEntry("B", "Y", "https://arstechnica.com/science/2024/01/b/", "2024-01-02T00:00:00+00:00", "science", "") +
-		singleEntry("C", "Z", "https://arstechnica.com/science/2024/01/c/", "2024-01-03T00:00:00+00:00", "science", "")
-	xml := atomXML(entries)
+	items := singleItem("A", "https://arstechnica.com/science/2024/01/a/", "Mon, 01 Jan 2024 00:00:00 +0000", "X", "Science", "") +
+		singleItem("B", "https://arstechnica.com/science/2024/01/b/", "Tue, 02 Jan 2024 00:00:00 +0000", "Y", "Science", "") +
+		singleItem("C", "https://arstechnica.com/science/2024/01/c/", "Wed, 03 Jan 2024 00:00:00 +0000", "Z", "Science", "")
+	xml := rssXML(items)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(xml))
 	}))
@@ -211,11 +213,11 @@ func TestArticlesRankOrder(t *testing.T) {
 }
 
 func TestArticlesLimit(t *testing.T) {
-	entries := ""
+	items := ""
 	for i := 0; i < 5; i++ {
-		entries += singleEntry("T", "A", "https://arstechnica.com/gaming/2024/01/x/", "2024-01-01T00:00:00+00:00", "gaming", "")
+		items += singleItem("T", "https://arstechnica.com/gaming/2024/01/x/", "Mon, 01 Jan 2024 00:00:00 +0000", "A", "Gaming", "")
 	}
-	xml := atomXML(entries)
+	xml := rssXML(items)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(xml))
 	}))
@@ -242,13 +244,13 @@ func TestArticlesUnknownSection(t *testing.T) {
 	}
 }
 
-func TestArticlesSectionFromDCSubject(t *testing.T) {
-	xml := atomXML(singleEntry(
+func TestArticlesSectionFromCategory(t *testing.T) {
+	xml := rssXML(singleItem(
 		"Cars Article",
-		"Aurich Lawson",
 		"https://arstechnica.com/cars/2024/01/car-review/",
-		"2024-01-05T08:00:00+00:00",
-		"cars",
+		"Fri, 05 Jan 2024 08:00:00 +0000",
+		"Aurich Lawson",
+		"Cars",
 		"<p>Summary.</p>",
 	))
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +269,7 @@ func TestArticlesSectionFromDCSubject(t *testing.T) {
 
 func TestSectionsReturnsAll(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(atomXML("")))
+		_, _ = w.Write([]byte(rssXML("")))
 	}))
 	defer ts.Close()
 
@@ -296,7 +298,7 @@ func TestGetRetriesOn503(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		_, _ = w.Write([]byte(atomXML("")))
+		_, _ = w.Write([]byte(rssXML("")))
 	}))
 	defer ts.Close()
 
@@ -323,7 +325,7 @@ func TestGetUserAgent(t *testing.T) {
 	var gotUA string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
-		_, _ = w.Write([]byte(atomXML("")))
+		_, _ = w.Write([]byte(rssXML("")))
 	}))
 	defer ts.Close()
 

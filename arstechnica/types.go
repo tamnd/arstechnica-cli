@@ -24,48 +24,42 @@ type Section struct {
 	URL  string `json:"url"`
 }
 
-// ─── XML wire types ──────────────────────────────────────────────────────────
+// ─── RSS 2.0 wire types ───────────────────────────────────────────────────────
 
-type atomFeed struct {
-	XMLName xml.Name    `xml:"feed"`
-	Entries []atomEntry `xml:"entry"`
+// rssFeed is the root of an RSS 2.0 document from feeds.arstechnica.com.
+type rssFeed struct {
+	XMLName xml.Name   `xml:"rss"`
+	Channel rssChannel `xml:"channel"`
 }
 
-type atomEntry struct {
-	Title     string     `xml:"title"`
-	Links     []atomLink `xml:"link"`
-	Published string     `xml:"published"`
-	Updated   string     `xml:"updated"`
-	Author    struct {
-		Name string `xml:"name"`
-	} `xml:"author"`
-	Subject string `xml:"subject"`
-	Summary string `xml:"summary"`
+type rssChannel struct {
+	Items []rssItem `xml:"item"`
 }
 
-type atomLink struct {
-	Href string `xml:"href,attr"`
-	Rel  string `xml:"rel,attr"`
+// rssItem maps to each <item> in the feed.
+// dc:creator maps to the local name "creator" (encoding/xml matches local name).
+type rssItem struct {
+	Title       string   `xml:"title"`
+	Link        string   `xml:"link"`
+	PubDate     string   `xml:"pubDate"`
+	Creator     string   `xml:"creator"`
+	Description string   `xml:"description"`
+	Categories  []string `xml:"category"`
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-func pickLink(links []atomLink) string {
-	for _, l := range links {
-		if l.Rel == "" || l.Rel == "alternate" {
-			return l.Href
-		}
-	}
-	if len(links) > 0 {
-		return links[0].Href
-	}
-	return ""
-}
-
+// parseDate parses an RSS pubDate (RFC1123Z: "Mon, 02 Jan 2006 15:04:05 +0000")
+// and returns "2006-01-02". Falls back to the raw string on parse error.
 func parseDate(s string) string {
-	t, err := time.Parse(time.RFC3339, s)
+	s = strings.TrimSpace(s)
+	t, err := time.Parse(time.RFC1123Z, s)
 	if err != nil {
-		return s
+		// try RFC1123 without timezone offset
+		t, err = time.Parse(time.RFC1123, s)
+		if err != nil {
+			return s
+		}
 	}
 	return t.UTC().Format("2006-01-02")
 }
@@ -73,25 +67,24 @@ func parseDate(s string) string {
 // sectionFromURL extracts the first non-empty path segment after the host.
 // e.g. "https://arstechnica.com/science/2024/01/slug/" -> "science"
 func sectionFromURL(u string) string {
-	// strip scheme
 	rest := u
 	if idx := strings.Index(rest, "://"); idx >= 0 {
 		rest = rest[idx+3:]
 	}
-	// strip host
 	if idx := strings.Index(rest, "/"); idx >= 0 {
 		rest = rest[idx+1:]
 	} else {
 		return ""
 	}
-	// first path segment
 	seg := rest
 	if idx := strings.Index(seg, "/"); idx >= 0 {
 		seg = seg[:idx]
 	}
-	return seg
+	return strings.ToLower(seg)
 }
 
+// stripAndTruncate strips HTML tags, collapses common entities, and truncates
+// to maxChars runes, appending "…" if truncated.
 func stripAndTruncate(html string, maxChars int) string {
 	var b strings.Builder
 	inTag := false
@@ -120,23 +113,29 @@ func stripAndTruncate(html string, maxChars int) string {
 	return out
 }
 
-func entryToArticle(e atomEntry, rank int) Article {
-	u := pickLink(e.Links)
-	section := e.Subject
-	if section == "" {
-		section = sectionFromURL(u)
+// sectionFromCategories picks the first category that looks like an editorial
+// section name (lowercased, no spaces, known or short enough to be a slug).
+// Falls back to URL extraction.
+func sectionFromCategories(cats []string, u string) string {
+	for _, c := range cats {
+		c = strings.ToLower(strings.TrimSpace(c))
+		// skip multi-word tags like "fungal networks"
+		if c != "" && !strings.Contains(c, " ") {
+			return c
+		}
 	}
-	published := e.Published
-	if published == "" {
-		published = e.Updated
-	}
+	return sectionFromURL(u)
+}
+
+func itemToArticle(it rssItem, rank int) Article {
+	section := sectionFromCategories(it.Categories, it.Link)
 	return Article{
 		Rank:      rank,
-		Title:     strings.TrimSpace(e.Title),
-		Author:    strings.TrimSpace(e.Author.Name),
-		Section:   strings.ToLower(strings.TrimSpace(section)),
-		Published: parseDate(published),
-		Summary:   stripAndTruncate(e.Summary, 150),
-		URL:       u,
+		Title:     strings.TrimSpace(it.Title),
+		Author:    strings.TrimSpace(it.Creator),
+		Section:   section,
+		Published: parseDate(it.PubDate),
+		Summary:   stripAndTruncate(it.Description, 150),
+		URL:       strings.TrimSpace(it.Link),
 	}
 }
