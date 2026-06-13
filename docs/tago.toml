@@ -1,0 +1,10 @@
+title       = "ars"
+baseURL     = "https://arstechnica-cli.tamnd.com/"
+description = "Read Ars Technica technology and science articles"
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/arstechnica-cli"
